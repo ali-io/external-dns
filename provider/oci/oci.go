@@ -263,7 +263,19 @@ func (p *OCIProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) e
 
 	ops = append(ops, p.newFilteredRecordOperations(changes.Delete, dns.RecordOperationOperationRemove)...)
 
-	if len(ops) == 0 {
+
+	// Filter out invalid A record operations
+	var validOps []dns.RecordOperation
+	for _, op := range ops {
+		if *op.Rtype == "A" && strings.Contains(*op.Rdata, " ") {
+			// Skip this operation as it's an invalid A record
+			log.Debugf("Skipping invalid A record operation: %+v", op)
+			continue
+		}
+		validOps = append(validOps, op)
+	}
+	
+	if len(validOps) == 0 {
 		log.Info("All records are already up to date")
 		return nil
 	}
@@ -274,7 +286,7 @@ func (p *OCIProvider) ApplyChanges(ctx context.Context, changes *plan.Changes) e
 	}
 
 	// Separate into per-zone change sets to be passed to OCI API.
-	opsByZone := operationsByZone(zones, ops)
+	opsByZone := operationsByZone(zones, validOps)
 	for zoneID, ops := range opsByZone {
 		log.Infof("Change zone: %q", zoneID)
 		for _, op := range ops {
